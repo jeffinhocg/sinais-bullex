@@ -1,0 +1,117 @@
+
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SignalX OTC PRO - Análise de Velas</title>
+  <style>
+    body { background: #111; color: #fff; font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+    h1 { font-size: 26px; margin-bottom: 10px; }
+    .sinal {
+      margin-top: 40px; font-size: 44px; font-weight: bold;
+      padding: 20px; border-radius: 12px;
+      display: inline-block; min-width: 200px;
+    }
+    .call { background-color: #00e676; color: black; }
+    .put { background-color: #ff1744; color: white; }
+    .neutro { background-color: #616161; color: white; }
+    .debug { margin-top: 30px; font-size: 13px; color: #ccc; white-space: pre-line; }
+    .alerta { display: none; }
+  </style>
+</head>
+<body>
+  <h1>SignalX OTC PRO — Leitura Realista de Velas</h1>
+  <div id="sinal" class="sinal neutro">AGUARDANDO...</div>
+  <div class="debug" id="infoDebug"></div>
+  <audio id="somAlerta" class="alerta" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
+
+  <script>
+    const candles = [
+      { open: 100, close: 107, high: 108, low: 99 },  // Engolfo de alta
+      { open: 107, close: 100, high: 109, low: 99 },  // Engolfo de baixa
+      { open: 100, close: 100.5, high: 101, low: 99 }, // Doji
+      { open: 101, close: 108, high: 109, low: 101 }, // Marubozu
+      { open: 108, close: 102, high: 110, low: 101 }, // Estrela da noite
+    ];
+
+    let lastSignal = 'NEUTRO';
+
+    function classificarVela(c) {
+      const corpo = Math.abs(c.close - c.open);
+      const range = c.high - c.low;
+      const corpoPerc = corpo / range;
+
+      const pavioSuperior = c.high - Math.max(c.close, c.open);
+      const pavioInferior = Math.min(c.close, c.open) - c.low;
+
+      if (corpoPerc < 0.1) return 'Doji';
+      if (corpoPerc > 0.9 && pavioSuperior < 0.05 && pavioInferior < 0.05) return 'Marubozu';
+      if (c.close > c.open && corpoPerc > 0.6) return 'Engolfo de alta';
+      if (c.open > c.close && corpoPerc > 0.6) return 'Engolfo de baixa';
+      if (pavioInferior > corpo * 2) return 'Martelo';
+      if (pavioSuperior > corpo * 2) return 'Martelo Invertido';
+      return 'Neutra';
+    }
+
+    function analisarCandle(c, i) {
+      const tipo = classificarVela(c);
+      const anterior = candles[(i - 1 + candles.length) % candles.length];
+      const tipoAnterior = classificarVela(anterior);
+
+      let sinal = 'NEUTRO';
+      let motivo = '';
+
+      if (tipo === 'Engolfo de alta' && tipoAnterior !== 'Engolfo de alta') {
+        sinal = 'CALL';
+        motivo = 'Engolfo de alta detectado após vela fraca';
+      } else if (tipo === 'Engolfo de baixa' && tipoAnterior !== 'Engolfo de baixa') {
+        sinal = 'PUT';
+        motivo = 'Engolfo de baixa detectado após vela fraca';
+      } else if (tipo === 'Marubozu') {
+        sinal = c.close > c.open ? 'CALL' : 'PUT';
+        motivo = 'Marubozu (força total)';
+      } else if (tipo === 'Doji') {
+        sinal = 'NEUTRO';
+        motivo = 'Doji — indecisão';
+      } else if (tipo === 'Martelo' || tipo === 'Martelo Invertido') {
+        sinal = c.close > c.open ? 'CALL' : 'PUT';
+        motivo = tipo + ' com confirmação';
+      }
+
+      if (sinal === lastSignal) {
+        sinal = 'NEUTRO';
+        motivo += '\nBloqueado por repetição';
+      }
+
+      lastSignal = sinal === 'NEUTRO' ? lastSignal : sinal;
+
+      return {
+        tipo,
+        sinal,
+        debug: `Tipo de vela: ${tipo}\nOpen: ${c.open} | Close: ${c.close}\nHigh: ${c.high} | Low: ${c.low}\nMotivo: ${motivo}`
+      };
+    }
+
+    function exibirResultado(res) {
+      const el = document.getElementById("sinal");
+      const info = document.getElementById("infoDebug");
+      const som = document.getElementById("somAlerta");
+
+      el.textContent = res.sinal;
+      el.className = "sinal " + res.sinal.toLowerCase();
+      info.textContent = res.debug;
+
+      if (res.sinal === 'CALL' || res.sinal === 'PUT') som.play();
+    }
+
+    let index = 0;
+    setInterval(() => {
+      const candle = candles[index % candles.length];
+      const resultado = analisarCandle(candle, index);
+      exibirResultado(resultado);
+      index++;
+    }, 60000); // 1 minuto
+  </script>
+</body>
+</html>
